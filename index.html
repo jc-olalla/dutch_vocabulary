@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dutch–English Vocab App</title>
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root{
+      --bg:#0f172a; --panel:#111827ee; --muted:#94a3b8; --text:#e5e7eb; --card:#0b1225; --border:#1f2937; --hover:#0f1a33;
+      --accent:#38bdf8; --accent2:#34d399; --danger:#fb7185;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji","Segoe UI Emoji";background:linear-gradient(180deg,#0b1225,#0f172a 40%,#0b1225);color:var(--text)}
+    .wrap{max-width:900px;margin:0 auto;padding:20px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+    h1{margin:0;font-size:22px;letter-spacing:.2px}
+    .muted{color:var(--muted)}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    input[type="text"], input[type="file"]{padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text)}
+    button{padding:10px 14px;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+    button:hover{background:var(--hover)}
+    .pill{border-radius:999px}
+    .card{background:linear-gradient(180deg,#0c142a,#0a1020);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);margin-top:12px}
+    .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+    .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .label{font-size:12px;color:var(--muted)}
+    .big{font-size:1.25rem;font-weight:700}
+    .divider{height:1px;background:#1e293b;margin:10px 0}
+    .badge{font-size:12px;color:#8ab4ff}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>📚 Dutch–English Vocab App</h1>
+        <div class="muted">Dark theme • randomize • search • speak</div>
+      </div>
+      <div class="actions">
+        <button id="btnRandom" class="pill" title="Random card">🎲 Random</button>
+        <button id="btnSpeak" class="pill" title="Read the current card">🔊 Speak</button>
+        <button id="btnStop" class="pill" title="Stop speaking">⏹ Stop</button>
+      </div>
+    </header>
+
+    <div class="bar">
+      <span class="label">Data source: <code>words.csv</code> (auto-loaded). You can also override by choosing a file:</span>
+      <input type="file" id="fileInput" accept=".csv" />
+    </div>
+
+    <div class="bar">
+      <span class="label">Search</span>
+      <input id="nlInput" placeholder="🔎 Dutch word (e.g. aan)" />
+      <button id="btnFindNl" title="Find Dutch">🇳🇱 Find NL</button>
+      <input id="enInput" placeholder="🔎 English word (e.g. offer)" />
+      <button id="btnFindEn" title="Find English">🇬🇧 Find EN</button>
+    </div>
+
+    <div id="status" class="muted">Loading <code>words.csv</code>…</div>
+
+    <div id="output" class="card">Nothing to show yet.</div>
+
+    <div class="muted" style="margin-top:8px">Tip: supports delimiters <code>│</code>, <code>|</code>, or <code>,</code>.</div>
+  </div>
+
+  <script>
+    const out = document.getElementById('output');
+    const statusEl = document.getElementById('status');
+    const rows = [];
+    let lastShown = null;
+
+    const norm = s => (s||'').toString().trim().toLowerCase().normalize('NFD').replace(/\p{Diacritic}+/gu,'');
+    const unquote = s => (s||'').replace(/^"|"$/g,'');
+
+    function detectDelimiter(csvText){
+      const commas = (csvText.match(/,/g)||[]).length;
+      const bars   = (csvText.match(/\|/g)||[]).length; // ASCII |
+      const box    = (csvText.match(/[\u2502]/g)||[]).length; // │
+      if (box > commas && box >= bars) return '\u2502';
+      if (bars > commas) return '|';
+      return ',';
+    }
+
+    function mapRow(r){
+      const keys = Object.keys(r).reduce((acc,k)=>{acc[norm(k).replace(/[^a-z0-9_]+/g,'')] = r[k]; return acc;},{});
+      return {
+        dutch:     unquote(keys['dutch_word'] || ''),
+        english1:  unquote(keys['english1'] || ''),
+        english2:  unquote(keys['english2'] || ''),
+        sentence1: unquote(keys['sentence1'] || ''),
+        sentence2: unquote(keys['sentence2'] || ''),
+      };
+    }
+
+    function show(rec){
+      if(!rec){ out.innerHTML = '<span class="muted">No match</span>'; return; }
+      lastShown = rec;
+      const esc = s => (s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+      out.innerHTML = `
+        <div class="big">${esc(rec.dutch)}</div>
+        <div class="divider"></div>
+        ${rec.english1 ? `<div><strong>${esc(rec.english1)}</strong></div>` : ''}
+        ${rec.sentence1 ? `<div>${esc(rec.sentence1)}</div>` : ''}
+        ${rec.english1 || rec.sentence1 ? '<br/>' : ''}
+        ${rec.english2 ? `<div><strong>${esc(rec.english2)}</strong></div>` : ''}
+        ${rec.sentence2 ? `<div>${esc(rec.sentence2)}</div>` : ''}
+      `;
+    }
+
+    function pick(){ return rows[Math.floor(Math.random()*rows.length)]; }
+
+    function parseText(text){
+      const delimiter = detectDelimiter(text);
+      statusEl.textContent = `Parsing with delimiter "${delimiter === '\\u2502' ? '│' : delimiter}" ...`;
+      Papa.parse(text, {
+        header:true, skipEmptyLines:true, delimiter,
+        complete: res => {
+          rows.length = 0;
+          (res.data||[]).map(mapRow).filter(r=> r.dutch || r.english1 || r.english2 || r.sentence1 || r.sentence2).forEach(r=> rows.push(r));
+          if(!rows.length){ statusEl.textContent = 'Parsed, but no rows found.'; out.textContent = 'Check header & delimiter.'; return; }
+          statusEl.textContent = `Loaded ${rows.length} rows.`;
+          show(pick());
+        }
+      });
+    }
+
+    // Auto-load words.csv on page load (same folder as index.html)
+    window.addEventListener('DOMContentLoaded', () => {
+      fetch('words.csv', { cache: 'no-store' })
+        .then(r => { if(!r.ok) throw new Error('No words.csv found'); return r.text(); })
+        .then(text => parseText(text))
+        .catch(() => { statusEl.textContent = 'words.csv not found — choose a file to load.'; });
+    });
+
+    // Optional manual override: choose a different CSV
+    document.getElementById('fileInput').addEventListener('change', e => {
+      const file = e.target.files[0]; if(!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => parseText(ev.target.result);
+      reader.readAsText(file);
+    });
+
+    document.getElementById('btnRandom').addEventListener('click', ()=> rows.length && show(pick()));
+    document.getElementById('btnFindNl').addEventListener('click', ()=>{
+      const v = norm(document.getElementById('nlInput').value);
+      show(rows.find(r => norm(r.dutch) === v) || rows.find(r => norm(r.dutch).includes(v)));
+    });
+    document.getElementById('btnFindEn').addEventListener('click', ()=>{
+      const v = norm(document.getElementById('enInput').value);
+      show(rows.find(r => norm(r.english1) === v || norm(r.english2) === v)
+        || rows.find(r => norm(r.english1).includes(v) || norm(r.english2).includes(v)));
+    });
+
+    // --- Speech ---
+    function speak(text, lang){
+      return new Promise(resolve => {
+        if(!('speechSynthesis' in window)) { statusEl.textContent = 'Speech not supported in this browser.'; return resolve(); }
+        const u = new SpeechSynthesisUtterance(text); u.lang = lang; u.onend = resolve; speechSynthesis.speak(u);
+      });
+    }
+    async function speakRecord(rec){
+      if(!rec) return;
+      const parts = [];
+      if(rec.dutch) parts.push({t: rec.dutch, lang:'nl-NL'});
+      if(rec.english1) parts.push({t: rec.english1, lang:'en-US'});
+      if(rec.sentence1) parts.push({t: rec.sentence1, lang:'nl-NL'});
+      if(rec.english2) parts.push({t: rec.english2, lang:'en-US'});
+      if(rec.sentence2) parts.push({t: rec.sentence2, lang:'nl-NL'});
+      for(const p of parts){ await speak(p.t, p.lang); }
+    }
+    document.getElementById('btnSpeak').addEventListener('click', ()=> speakRecord(lastShown));
+    document.getElementById('btnStop').addEventListener('click', ()=> speechSynthesis.cancel());
+  </script>
+</body>
+</html>
+
